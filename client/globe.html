@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Cesium Globe</title>
+    <script src="config.js"></script>
+    <script src="https://cesium.com/downloads/cesiumjs/releases/1.100/Build/Cesium/Cesium.js"></script>
+    <link href="https://cesium.com/downloads/cesiumjs/releases/1.100/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+    <style>
+        body { margin: 0; padding: 0; }
+        #cesiumContainer { width: 100%; height: 100vh; position: relative; }
+        #infoPanel {
+            position: absolute;
+            background-color: rgba(255, 255, 255, 0.8);
+            padding: 5px;
+            border-radius: 5px;
+            font-size: 12px; /* Smaller font size */
+            max-width: 160px; /* Maximum width */
+            overflow: hidden; /* Hide overflow */
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3); /* Optional: adds subtle shadow */
+            border: 1px solid #ddd; /* Optional: adds border */
+            z-index: 999;
+            display: none; /* Initially hide the infoPanel */
+        }
+        .loader {
+            display: none; /* Hidden by default */
+            position: absolute;
+            z-index: 1000; /* Ensure it's on top */
+            left: 50%;
+            top: 50%;
+            border: 5px solid #f3f3f3; /* Light grey */
+            border-top: 5px solid #3498db; /* Blue */
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 2s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+    </style>
+</head>
+<body>
+    <div id="cesiumContainer">
+        <div id="infoPanel">Click on the globe to add a pin.</div>
+        <div id="loader" class="loader"></div>
+    </div>
+
+    <script>
+        // Your access token from Cesium ion
+        Cesium.Ion.defaultAccessToken = cesiumAccessToken;
+
+        // Initializing the Cesium Viewer in the div with the id 'cesiumContainer'.
+        let viewer = new Cesium.Viewer('cesiumContainer', {
+            terrainProvider: Cesium.createWorldTerrain(),
+            animation: false,         // Disable the animation widget
+            timeline: false,          // Disable the timeline widget
+            skyBox: false,            // Disable the skyBox (for stars)
+            homeButton: false,        // Disable the home button
+            geocoder: false,          // Disable the geocoder widget
+            fullscreenButton: false,  // Disable the full screen button
+            vrButton: false,          // Disable the VR button
+            baseLayerPicker: false    // Disable the base layer picker
+        });
+
+        function addPin(longitude, latitude, callback) {
+            let id = 'pin_' + longitude + '_' + latitude; // Generate a unique ID for the pin
+            viewer.entities.add({
+                id: id,
+                position: Cesium.Cartesian3.fromDegrees(longitude, latitude),
+                billboard: {
+                    image: 'static/pin.png', 
+                    width: 20,
+                    height: 20,
+                    crossOrigin: 'anonymous'
+                },
+                properties: {
+                    latitude: latitude,
+                    longitude: longitude
+                }
+            });
+            callback(longitude, latitude);
+        }
+
+        function getCountryInfo(latitude, longitude) {
+            document.getElementById('loader').style.display = 'block';
+            // Call the API with the latitude and longitude to get country info
+            return fetch(`http://localhost:5000/get_population?latitude=${latitude}&longitude=${longitude}`)
+                .then(response => response.json())
+                .then((data)=>{
+                    document.getElementById('loader').style.display = 'none';
+                    return data;
+                })
+                .catch(error => {
+                    console.error(error);
+                    document.getElementById('loader').style.display = 'none';
+                    return { error: 'Failed to fetch data' };
+                });
+        }
+
+        function removeAllPins() {
+            viewer.entities.removeAll();
+        }
+
+        // Function to hide the info panel
+        function hideInfoPanel() {
+            console.log('this is called')
+            const infoPanel = document.getElementById('infoPanel');
+            infoPanel.style.display = 'none';
+        }
+
+        // Attach an event listener to the camera changed event
+        viewer.camera.changed.addEventListener(function() {
+            hideInfoPanel();  // Hide the info panel
+            removeAllPins();  // Remove all pins
+        });
+
+        let handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
+        handler.setInputAction(async function (click) {
+            let ellipsoid = viewer.scene.globe.ellipsoid;
+            let cartesian = viewer.camera.pickEllipsoid(click.position, ellipsoid);
+            if (cartesian) {
+                let cartographic = ellipsoid.cartesianToCartographic(cartesian);
+                let longitude = Cesium.Math.toDegrees(cartographic.longitude);
+                let latitude = Cesium.Math.toDegrees(cartographic.latitude);
+                addPin(longitude, latitude, async function(longitude, latitude) {
+                    const response = await getCountryInfo(latitude, longitude);
+                    // Update the infoPanel with the retrieved country name and population count
+                    if (!response.error) {
+                        const infoPanel = document.getElementById('infoPanel');
+                        infoPanel.style.display = 'block';
+                        infoPanel.innerHTML = `Country: ${response.Country}<br>Population count: ${response.Population}<br>Last updated: ${response.Last_Updated}`;
+                        // Update infoPanel position based on the pin's position
+                        const pinPosition = viewer.entities.getById('pin_' + longitude + '_' + latitude).position.getValue();
+                        const screenPosition = Cesium.SceneTransforms.wgs84ToWindowCoordinates(viewer.scene, pinPosition);
+                        infoPanel.style.left = screenPosition.x + 'px';
+                        infoPanel.style.top = screenPosition.y + 'px';
+                    } else {
+                        document.getElementById('infoPanel').style.display = 'none';
+                    }
+                });
+            }
+        }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+
+    </script>
+</body>
+</html>
