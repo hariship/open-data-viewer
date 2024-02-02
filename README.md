@@ -2,6 +2,8 @@
 
 This project demonstrates how to set up a Cesium globe with an access token using HTML and JavaScript on the client side and a Flask server on the server side for backend operations. The access token is kept in a separate configuration file for security and flexibility.
 
+![Demo](client/static/globe_population-ezgif.com-video-to-gif-converter.gif)
+
 ## Client Side
 
 ### Getting Started
